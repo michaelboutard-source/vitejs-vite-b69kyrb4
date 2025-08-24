@@ -1,0 +1,14 @@
+{
+  "name": "Trading Journal",
+  "short_name": "Journal",
+  "description": "Privacy-friendly trading journal (offline-first).",
+  "display": "standalone",
+  "start_url": "/",
+  "scope": "/",
+  "background_color": "#111827",
+  "theme_color": "#111827",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/icons/icon-candle.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]  
+}
