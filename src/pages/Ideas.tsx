@@ -5,7 +5,7 @@ import { useI18n } from "@i18n";
 import { db, type Trade } from "@db";
 
 /** =========================================
- * Types & constants
+ * Types & constants (restored)
  * ========================================= */
 type Exchange = "Binance";
 type Timeframe = "1h" | "4h" | "1D";
@@ -29,17 +29,6 @@ type Candle = {
   volume: number;
 };
 
-type Idea = {
-  symbol: string;
-  price: number;
-  changePct24h: number;
-  quoteVol24h: number;
-  score: number;
-  reasons: string[];
-  whyText: string;
-  setups: AnalyzedSetups | null; // when Candle mode used
-};
-
 type AnalyzedSetups = {
   trend: "up" | "down" | "sideways";
   ema20: number;
@@ -59,6 +48,17 @@ type AnalyzedSetups = {
   tpAggressive: number;
 };
 
+type Idea = {
+  symbol: string;
+  price: number;
+  changePct24h: number;
+  quoteVol24h: number;
+  score: number;
+  reasons: string[];
+  whyText: string;
+  setups: AnalyzedSetups | null; // when Candle mode used
+};
+
 const BLOCKED = new Set<string>(["OKBUSDT"]);
 const DEFAULT_TOP_USDT: string[] = [
   "BTCUSDT","ETHUSDT","BNBUSDT","SOLUSDT","XRPUSDT","ADAUSDT","DOGEUSDT","TONUSDT","AVAXUSDT",
@@ -66,7 +66,7 @@ const DEFAULT_TOP_USDT: string[] = [
   "SUIUSDT","FILUSDT","ICPUSDT","INJUSDT","AAVEUSDT","RNDRUSDT"
 ];
 
-/** Risk presets for labels (we now compute SL/TP from candles) */
+/** Risk presets for labels */
 const RISK_LABELS = {
   conservative: "Conservative",
   moderate:     "Moderate",
@@ -125,7 +125,6 @@ function detectTrend(ema20: number, ema50: number, ema200: number): "up" | "down
 /** =========================================
  * Fetchers
  * ========================================= */
-/** 24h tickers, used for fallback/filters/sorting */
 async function fetchBinanceTickersChunked(symbols: string[], chunkSize = 20): Promise<Ticker[]> {
   const chunks: string[][] = [];
   for (let i = 0; i < symbols.length; i += chunkSize) chunks.push(symbols.slice(i, i + chunkSize));
@@ -150,7 +149,6 @@ async function fetchBinanceTickersChunked(symbols: string[], chunkSize = 20): Pr
   return results;
 }
 
-/** Historical candles for deeper analysis */
 async function fetchKlines(symbol: string, interval: Timeframe, limit = 300): Promise<Candle[]> {
   const map: Record<Timeframe, string> = { "1h": "1h", "4h": "4h", "1D": "1d" };
   const url = `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=${map[interval]}&limit=${limit}`;
@@ -214,10 +212,7 @@ function buildSetupsFromCandles(candles: Candle[]): AnalyzedSetups | null {
   const swingL = swingLow(candles, 40);
   const trend = detectTrend(ema20v, ema50v, ema200v);
 
-  // Entries (examples):
-  // Conservative: pullback to EMA50 (trend up) or breakout retest (sideways)
-  // Moderate: pullback to EMA20 (trend up) or break above swing high
-  // Aggressive: market-with-buffer toward breakout (or mean reversion bounce)
+  // Entries
   let entryCons = last, slCons = last - 1.2 * atrv, tpCons = last + 2 * atrv;
   let entryMod  = last, slMod  = last - 1.5 * atrv, tpMod  = last + 2.5 * atrv;
   let entryAgg  = last, slAgg  = last - 2.0 * atrv, tpAgg  = last + 3.0 * atrv;
@@ -227,18 +222,15 @@ function buildSetupsFromCandles(candles: Candle[]): AnalyzedSetups | null {
     entryMod  = ema20v; slMod  = Math.min(ema20v - 1.2 * atrv, swingL - 0.5 * atrv); tpMod  = entryMod + 2.5 * atrv;
     entryAgg  = last;   slAgg  = last - 2.0 * atrv;                                  tpAgg  = last + 3.0 * atrv;
   } else if (trend === "sideways") {
-    // Range trade: buy near swing low, TP mid to high
     entryCons = (swingL + ema50v) / 2; slCons = swingL - 1.0 * atrv; tpCons = ema50v + 1.5 * atrv;
     entryMod  = ema50v;                slMod  = swingL - 1.2 * atrv; tpMod  = swingH - 0.5 * atrv;
     entryAgg  = last;                   slAgg  = swingL - 1.5 * atrv; tpAgg  = swingH;
   } else {
-    // Downtrend long = risky; still propose mean-reversion bounce
     entryCons = ema20v; slCons = swingL - 1.2 * atrv; tpCons = ema50v;
     entryMod  = (ema20v + ema50v) / 2; slMod = swingL - 1.5 * atrv; tpMod = ema50v + 1.5 * atrv;
     entryAgg  = last; slAgg = swingL - 2.0 * atrv; tpAgg = ema50v + 2.0 * atrv;
   }
 
-  // Ensure SL below Entry & TP above Entry
   function fix(entry: number, sl: number, tp: number) {
     let e = entry, s = sl, t = tp;
     if (s >= e) s = e - 0.5 * atrv;
@@ -325,7 +317,7 @@ export function IdeasPage() {
 
   const [timeframe, setTimeframe] = useState<Timeframe>("4h");
   const [strategy, setStrategy] = useState<Strategy>("Momentum");
-  const [basis, setBasis] = useState<SignalBasis>("Candles"); // NEW
+  const [basis, setBasis] = useState<SignalBasis>("Candles");
 
   const [minVol, setMinVol] = useState<string>("10000000");
   const [minPrice, setMinPrice] = useState<string>("0.05");
@@ -334,6 +326,9 @@ export function IdeasPage() {
   // Sizing
   const [sizingMode, setSizingMode] = useState<SizingMode>("invest");
   const [userUSDT, setUserUSDT] = useState<string>("50");
+
+  // Configurable actionable threshold
+  const [thresholdPct, setThresholdPct] = useState<string>("2");
 
   /** Results */
   const [loading, setLoading] = useState(false);
@@ -372,7 +367,7 @@ export function IdeasPage() {
       const minP = Number(minPrice.replace(",", "."));
       if (!Number.isFinite(minV) || !Number.isFinite(minP)) throw new Error("Min Volume/Price must be numbers.");
 
-      // 1) Base tickers to filter liquidity/price and for display
+      // 1) Base tickers
       const tickers = await fetchBinanceTickersChunked(selectedSymbols, 20);
       let filtered = tickers
         .filter((r) => Number.isFinite(r.last) && r.last >= minP)
@@ -380,11 +375,11 @@ export function IdeasPage() {
 
       if (!filtered.length) throw new Error("No results passed your filters. Try relaxing them.");
 
-      // Leave top 12 by score for speed
+      // top 12
       filtered.sort((a, b) => scoreIdea(b) - scoreIdea(a));
       filtered = filtered.slice(0, 12);
 
-      // 2) If Candles basis, analyze candles per symbol
+      // 2) Analyze candles per symbol
       const tf = timeframe;
       const enriched: Idea[] = [];
       for (const t of filtered) {
@@ -409,7 +404,6 @@ export function IdeasPage() {
         }
 
         if (basis === "24h Ticker" || !setups) {
-          // fallback generic explanation
           const volScore = Math.log10(Math.max(1, t.quoteVol24h));
           reasons.push(t.changePct24h >= 2 ? "Positive 24h momentum" : "Meets liquidity filters");
           reasons.push(`High liquidity score: ${volScore.toFixed(2)}`);
@@ -428,7 +422,6 @@ export function IdeasPage() {
         });
       }
 
-      // sort by score then trend priority (up > sideways > down)
       const trendRank = (i: Idea) => (i.setups?.trend === "up" ? 2 : i.setups?.trend === "sideways" ? 1 : 0);
       enriched.sort((a, b) => trendRank(b) - trendRank(a) || b.score - a.score);
 
@@ -467,7 +460,7 @@ export function IdeasPage() {
     `1:${((tp - entry) / Math.max(1e-9, entry - sl)).toFixed(2)}`;
 
   return (
-    <Card title={t("ideas_title")} subtitle="Candle‑based analysis (EMA/ATR) to propose Entry, SL, TP on longer timeframes.">
+    <Card title={t("ideas_title")} subtitle="Candle-based analysis (EMA/ATR) to propose Entry, SL, TP on longer timeframes.">
       {/* Error banner */}
       {errorMsg && (
         <div style={{ background: "#fee2e2", border: "1px solid #fecaca", color: "#991b1b", padding: 10, borderRadius: 10, marginBottom: 10 }}>
@@ -562,6 +555,12 @@ export function IdeasPage() {
             <input value={userUSDT} onChange={(e) => setUserUSDT(e.target.value)} type="number" inputMode="decimal" step="any" style={inp} />
           </label>
 
+          {/* NEW: Threshold input */}
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={{ fontSize: 12, color: "#64748b" }}>Actionable threshold (%)</span>
+            <input value={thresholdPct} onChange={(e) => setThresholdPct(e.target.value)} type="number" inputMode="decimal" step="any" style={inp} />
+          </label>
+
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={onScan} disabled={loading} style={btnPrimary}>{loading ? "Scanning…" : "Scan"}</button>
             <button onClick={clearAll} style={btnSecondary}>Clear</button>
@@ -603,7 +602,7 @@ export function IdeasPage() {
 
                 {/* Why text */}
                 <div style={{ whiteSpace: "pre-wrap", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: 10, marginTop: 8, color: "#334155" }}>
-                  <b>Why this could work</b>{"\n"}{id.whyText}
+                <b>Why this could work</b>{"\n"}{id.whyText}
                 </div>
 
                 {/* Candle analysis summary (if available) */}
@@ -626,13 +625,26 @@ export function IdeasPage() {
                       if (kind === "moderate")     { entry = setups.entryModerate;     sl = setups.slModerate;     tp = setups.tpModerate; }
                       if (kind === "aggressive")   { entry = setups.entryAggressive;   sl = setups.slAggressive;   tp = setups.tpAggressive; }
                     }
+
                     const { qty, riskUsd } = positionFromSizing(entry, sl);
                     const gainUsd = (tp - entry) * qty;
 
+                    // distance% and status with configurable threshold
+                    const distPct = ((entry - id.price) / Math.max(1e-9, id.price)) * 100;
+                    const threshold = Number(thresholdPct) || 2;
+                    const actionable = Math.abs(distPct) <= threshold;
+                    const status = actionable ? "Actionable now" : "Pending";
+                    const statusStyle: React.CSSProperties = actionable
+                      ? { fontSize: 11, background: "#dcfce7", color: "#166534", borderRadius: 999, padding: "2px 8px" }
+                      : { fontSize: 11, background: "#f1f5f9", color: "#334155", borderRadius: 999, padding: "2px 8px" };
+
                     return (
                       <div key={kind} style={setupCardStyle(kind as any)}>
-                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <div style={{ fontWeight: 900 }}>{RISK_LABELS[kind as keyof typeof RISK_LABELS]}</div>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ fontWeight: 900 }}>{RISK_LABELS[kind as keyof typeof RISK_LABELS]}</div>
+                            <span style={statusStyle}>{status} • {distPct.toFixed(2)}%</span>
+                          </div>
                           <div style={{ fontSize: 12, color: "#334155" }}>R:R <b>{rrLabel(entry, sl, tp)}</b></div>
                         </div>
                         <div>
@@ -668,7 +680,7 @@ export function IdeasPage() {
                         <button
                           style={{ ...btnPrimary, marginTop: 8 }}
                           onClick={async () => {
-                            const notes = `Ideas (candles) • ${strategy} • ${timeframe} • ${RISK_LABELS[kind as keyof typeof RISK_LABELS]} • Mode:${sizingMode}`;
+                            const notes = `Ideas (candles) • ${strategy} • ${timeframe} • ${RISK_LABELS[kind as keyof typeof RISK_LABELS]} • Mode:${sizingMode} • ${status} (${distPct.toFixed(2)}%)`;
                             await addToJournal(id.symbol, entry, sl, tp, qty, notes);
                             alert(`Added ${id.symbol} (${RISK_LABELS[kind as keyof typeof RISK_LABELS]}) to Journal.`);
                           }}
