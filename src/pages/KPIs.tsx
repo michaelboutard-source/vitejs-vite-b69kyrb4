@@ -229,7 +229,10 @@ export function KPIsPage() {
               <Stat label="Best trade" value={`${kpis.best >= 0 ? "+" : ""}${kpis.best} USDT`} />
               <Stat label="Worst trade" value={`${kpis.worst >= 0 ? "+" : ""}${kpis.worst} USDT`} />
               <Stat label="Avg hold time" value={kpis.avgHold} />
-              <Stat label="Equity (last)" value={`${(equity.at(-1) ?? 0).toFixed(2)} USDT`} />
+              <Stat
+  label="Equity (last)"
+  value={`${((equity.length ? equity[equity.length - 1] : undefined) ?? 0).toFixed(2)} USDT`}
+/>
             </div>
 
             {/* Equity sparkline */}
